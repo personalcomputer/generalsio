@@ -2,7 +2,7 @@ from socketIO_client import SocketIO, BaseNamespace
 
 
 
-def patch(old, diff):
+def _patch(old, diff):
     """Returns a new list created by modfying the old list using change information encoded in the
     generals.io list diff encoding.
     """
