@@ -12,7 +12,8 @@ from socketIO_client import SocketIO, BaseNamespace
 # Example 2: patching a diff of [0, 1, 2, 1] onto [0, 0] yields [2, 0].
 #
 def patch(old, diff):
-    
+    pass
+
 
 class Tile(object): # enum
     EMPTY = -1
