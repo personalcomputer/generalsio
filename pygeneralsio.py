@@ -2,17 +2,26 @@ from socketIO_client import SocketIO, BaseNamespace
 
 
 
-# Returns a new array created by patching the diff into the old array.
-# The diff formatted with alternating matching and mismatching segments:
-# <Number of matching elements>
-# <Number of mismatching elements>
-# <The mismatching elements>
-# ... repeated until the end of diff.
-# Example 1: patching a diff of [1, 1, 3] onto [0, 0] yields [0, 3].
-# Example 2: patching a diff of [0, 1, 2, 1] onto [0, 0] yields [2, 0].
-#
 def patch(old, diff):
-    pass
+    """Returns a new list created by modfying the old list using change information encoded in the
+    generals.io list diff encoding.
+    """
+    new = []
+    cursor = 0
+
+    while cursor < len(diff):
+        num_elems_matching = diff[cursor]
+        if num_elems_matching != 0:
+            new.extend(old[len(new):len(new)+num_elems_matching])
+        cursor += 1
+        if cursor >= len(diff):
+            break
+        num_elems_changed = diff[cursor]
+        if num_elems_changed != 0:
+            cursor += 1
+            new.extend(diff[cursor:cursor+num_elems_changed])
+        cursor += num_elems_changed
+    return new
 
 
 class Tile(object): # enum
