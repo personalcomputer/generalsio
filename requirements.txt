@@ -1,3 +1,4 @@
 socketIO-client
 commentjson
 nosetests
+numpy

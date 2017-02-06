@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from pygeneralsio import _patch
+from generalsio import _patch
 
 
 class PatchTestCase(TestCase):
