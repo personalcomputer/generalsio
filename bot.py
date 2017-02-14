@@ -9,14 +9,13 @@ CONFIG_FILENAME = 'config.json'
 
 
 class WorldUnderstanding(object):
-
     def __init__(self):
         self.map_size = (None, None)
         self.enemy_pos = None
         self.player_pos = None
 
         self.cities = None
-        self.mountains = None
+        self.mountains = set()
 
         self.last_seen_scores = None
         self.expected_scores = None
@@ -25,15 +24,14 @@ class WorldUnderstanding(object):
         pass
 
 
-class Bot(object, GameClientListener):
-
-    def __init__(self, game_client):
-        self.client = game_client
+class Bot(GameClientListener):
+    def __init__(self, user_id, username):
+        self.client = GameClient(user_id, username)
         self.world = WorldUnderstanding()
         self.client.add_listener(self)
 
-    def handle_game_update(self, tiles, armies, cities, enemy_position, enemy_total_army,
-                           enemy_total_land):
+    def handle_game_update(self, half_turns, tiles, armies, cities, enemy_position, 
+                           enemy_total_army, enemy_total_land):
         self.world.update(tiles, armies, cities, enemy_position, enemy_total_army, enemy_total_land)
 
         # Move randomly
@@ -51,7 +49,7 @@ class Bot(object, GameClientListener):
         move = random.choice(move_options)
         self.client.move(self.world.player_pos, move)
 
-    def handle_game_start(self):
+    def handle_game_start(self, map_size, start_pos, enemy_username):
         pass
 
     def handle_game_over(self, won, replay_url):
@@ -63,12 +61,14 @@ class Bot(object, GameClientListener):
         print('%s\n' % '='*len(header))
         print('Replay: %s' % replay_url)
 
+    def block_forever(self):
+        self.client.wait()
+
 
 def main():
-    config = commentjson.loads(open(CONFIG_FILENAME).read())
-    client = GameClient(config['user_id'], config['username'])
-    
-    bot = Bot(client)
+    config = commentjson.loads(open(CONFIG_FILENAME).read())    
+    bot = Bot(config['user_id'], config['username'])
+    bot.block_forever()
 
 
 if __name__ == '__main__':

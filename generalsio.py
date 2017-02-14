@@ -1,5 +1,5 @@
-import pprint
-
+import json
+import math
 from socketIO_client import SocketIO, BaseNamespace
 
 
@@ -11,9 +11,8 @@ class Tile(object): # enum
 
 
 class GameClientListener(object):
-
-    def handle_game_update(self, tiles, armies, cities, enemy_position, enemy_total_army,
-                           enemy_total_land):
+    def handle_game_update(self, half_turns, tiles, armies, cities, enemy_position, 
+                           enemy_total_army, enemy_total_land):
         pass
 
     def handle_game_start(self, map_size, start_pos, enemy_username):
@@ -46,14 +45,16 @@ class GameClient(object):
         self._sock.on('game_update', self._on_game_update)
         self._sock.on('chat_message', self._on_chat_message)
 
-        self._sock.send("set_username", user_id, username)
+        self._sock.emit('set_username', user_id, username)
         self._user_id = user_id
 
+        self._is_first_update = True
         self._game_ended = False
         self._in_queue = False
         self._in_game = False
         self._chat_room = None
         self._map_size = (None, None)
+        self._map_num_elements = None
         self._player_index = None
         self._map = []
         self._cities = []
@@ -63,7 +64,7 @@ class GameClient(object):
         self._enemy_total_land = 1
         self._replay_url = None
 
-        self._halfturns = 0
+        self._half_turns = 0
         self._sent_attack_orders = 0
 
         self._listeners = []
@@ -72,34 +73,54 @@ class GameClient(object):
         if self._in_game:
             self._leave_game()
         else:
-            self._sock.send('cancel', '1v1')
+            self._sock.emit('cancel', '1v1')
             self._in_queue = False
 
     def join_queue(self):
         if self._game_ended:
             raise ValueError('Game already completed. Please create a new GameClient to requeue.')
-        self._sock.send("join_1v1", self._user_id)
+        self._sock.emit('join_1v1', self._user_id)
+        self._in_queue = True
+
+    def join_custom(self, custom_game_id):
+        if self._game_ended:
+            raise ValueError('Game already completed. Please create a new GameClient to requeue.')
+        self._sock.emit('join_private', custom_game_id, self._user_id)
+        force_start = True
+        self._sock.emit('set_force_start', custom_game_id, force_start)
         self._in_queue = True
 
     def chat(self, message):
-        self._sock.send('chat_message', self._chat_room, message)
+        self._sock.emit('chat_message', self._chat_room, message)
 
     def attack(self, start, end, half_move=False):
         start_index = start[0] + start[1] * self._map_size[1]
         end_index = end[0] + end[1] * self._map_size[1]
-        self._sock.send('attack', start_index, end_index, half_move)
+        self._sock.emit('attack', start_index, end_index, half_move)
         self._sent_attack_orders += 1
 
     def clear_moves(self):
-        self._sock.send('clear_moves')
+        self._sock.emit('clear_moves')
 
     def add_listener(self, listener):
         self._listeners.append(listener)
 
+    def wait(self, seconds=None):
+        self._sock.wait(seconds)
+
     def _leave_game(self):
-        self._sock.send('leave_game')
+        self._sock.emit('leave_game')
         self._game_ended = True
         self._in_game = False
+
+    def _index_to_coord(self, index):
+        return (
+            math.floor(index / self._map_size[0]),
+            index % self._map_size[0]
+        )
+
+    def _coord_to_index(self, coord):
+        return coord[0] * self._map_size[0] + coord[1]
 
     def _on_game_won(self, data):
         for listener in self._listeners:
@@ -111,7 +132,7 @@ class GameClient(object):
             listener.handle_game_over(won=False, replay_url=self._replay_url)
         self._leave_game()
 
-    def _on_game_start(self, data):
+    def _on_game_start(self, data, _):
         self._in_queue = False
         self._in_game = True
 
@@ -120,21 +141,43 @@ class GameClient(object):
         self._enemy_player_index = int(not self._player_index)
         self._enemy_username = data['usernames'][self._enemy_player_index]
 
+    def _on_game_update(self, data, _):
+        self._half_turns = data['turn'] 
+        self._map = _patch(self._map, data['map_diff'])
+        self._cities = _patch(self._cities, data['cities_diff'])
+
+        if self._is_first_update:
+            self._map_size = (self._map[0], self._map[1])
+            self._map_num_elements = self._map_size[0] * self._map_size[1]
+            start_location = self._index_to_coord(data['generals'][self._player_index])
+            for listener in self._listeners:
+                listener.handle_game_start(self._map_size, start_location, self._enemy_username)
+            self._is_first_update = False
+
+        tiles = self._map[2 + self._map_num_elements:2 + self._map_num_elements**2]
+        armies = self._map[2:2 + self._map_num_elements]
+        enemy_position = data['generals'][self._enemy_player_index]
+        enemy_total_army = data['scores'][self._enemy_player_index]['total']
+        enemy_total_land = data['scores'][self._enemy_player_index]['tiles']
+
         for listener in self._listeners:
-            listener.handle_game_start(data)
+            listener.handle_game_update(
+                half_turns=self._half_turns,
+                tiles=tiles,
+                armies=armies,
+                cities=self._cities,
+                enemy_position=enemy_position,
+                enemy_total_army=enemy_total_army,
+                enemy_total_land=enemy_total_land
+            )
 
-    def _on_game_update(self, data):
-        pprint.pprint(data, indent=4, width=1)
-        self._halfturns += 1
-
+    def _on_chat_message(self, chat_queue, data):
+        if 'username' in data:
+            username = data['username']
+        else:
+            username = '[System]'
         for listener in self._listeners:
-            listener.handle_game_update(data)
-
-    def _on_chat_message(self, *args):
-        print('[Received chat message, %s' % args)
-
-        #for listener in self._listeners:
-        #    listener.handle_chat(username, message)
+           listener.handle_chat(username, data['text'])
 
     def _on_connect(self):
         print('[Connected]')
@@ -166,3 +209,7 @@ def _patch(old, diff):
             new.extend(diff[cursor:cursor+num_elems_changed])
         cursor += num_elems_changed
     return new
+
+
+def pretty_print(json_like):
+    print(json.dumps(json_like, sort_keys=True, indent=4, separators=(',', ': ')))
