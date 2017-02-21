@@ -45,6 +45,8 @@ class GameClient(object):
         self._sock.on('game_update', self._on_game_update)
         self._sock.on('chat_message', self._on_chat_message)
 
+        if not username.startswith('[Bot] '):
+            raise ValueError('username must start with "[Bot] "')
         self._sock.emit('set_username', user_id, username)
         self._user_id = user_id
 
