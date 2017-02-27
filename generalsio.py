@@ -78,7 +78,7 @@ class GameClient(object):
             self._sock.emit('cancel', '1v1')
             self._in_queue = False
 
-    def join_queue(self):
+    def join_1v1_queue(self):
         if self._game_ended:
             raise ValueError('Game already completed. Please create a new GameClient to requeue.')
         self._sock.emit('join_1v1', self._user_id)
@@ -96,8 +96,8 @@ class GameClient(object):
         self._sock.emit('chat_message', self._chat_room, message)
 
     def attack(self, start, end, half_move=False):
-        start_index = start[0] + start[1] * self._map_size[1]
-        end_index = end[0] + end[1] * self._map_size[1]
+        start_index = self._coord_to_index((int(start[0]), int(start[1])))
+        end_index = self._coord_to_index((int(end[0]), int(end[1])))
         self._sock.emit('attack', start_index, end_index, half_move)
         self._sent_attack_orders += 1
 
@@ -124,12 +124,12 @@ class GameClient(object):
     def _coord_to_index(self, coord):
         return coord[0] * self._map_size[0] + coord[1]
 
-    def _on_game_won(self, data):
+    def _on_game_won(self, data, _):
         for listener in self._listeners:
             listener.handle_game_over(won=True, replay_url=self._replay_url)
         self._leave_game()
 
-    def _on_game_lost(self, data):
+    def _on_game_lost(self, data, _):
         for listener in self._listeners:
             listener.handle_game_over(won=False, replay_url=self._replay_url)
         self._leave_game()
@@ -156,8 +156,8 @@ class GameClient(object):
                 listener.handle_game_start(self._map_size, start_location, self._enemy_username)
             self._is_first_update = False
 
-        tiles = self._map[2 + self._map_num_elements:2 + self._map_num_elements**2]
-        armies = self._map[2:2 + self._map_num_elements]
+        tiles = _list_to_mat(self._map[2 + self._map_num_elements:2 + self._map_num_elements**2], self._map_size)
+        armies = _list_to_mat(self._map[2:2 + self._map_num_elements], self._map_size)
         enemy_position = data['generals'][self._enemy_player_index]
         enemy_total_army = data['scores'][self._enemy_player_index]['total']
         enemy_total_land = data['scores'][self._enemy_player_index]['tiles']
@@ -189,6 +189,13 @@ class GameClient(object):
 
     def _on_disconnect(self):
         print('[Disconnected]')
+
+
+def _list_to_mat(ilist, size):
+    return [
+        [ilist[x*size[1] + y] for y in range(size[1])]
+        for x in range(size[0])
+    ]
 
 
 def _patch(old, diff):
